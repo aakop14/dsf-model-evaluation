@@ -1,0 +1,12 @@
+# Core libraries
+pandas>=1.5
+numpy>=1.23
+scipy>=1.10
+
+
+# Visualization
+matplotlib>=3.7
+seaborn>=0.12
+
+# Interactive exploration
+jupyterlab>=3.6
