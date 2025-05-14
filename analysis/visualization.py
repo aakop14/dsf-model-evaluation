@@ -41,6 +41,44 @@ def plot_trade_time_hist(df
     plt.legend()
     plt.grid(True)
     plt.show()
+    
+    
+def plot_reset_trades_hist(actual_df
+                         , predicted_df = None
+                         , bins = 30
+                         , bin_width = None
+                         , fig_size=(10, 5)):
+    """Plot histogram of trades between resets"""
+    """Parameters:
+        df (pd.DataFrame): dataframe with columns 'reset' and 'trade_count'.
+        bins (int): number of bins for the histogram.
+        bin_width (int): width of bins for the histogram. If specified the bins count is overwritten. 
+        fig_size (tuple): size of the plot."""
+    
+    actual_trades_per_reset = actual_df.loc[actual_df['reset'], 'trade_count']
+    plt.figure(figsize=fig_size)
+    
+    if predicted_df is None:
+        if bin_width != None:
+            bins = np.arange(max(0, actual_trades_per_reset.min()-bin_width), actual_trades_per_reset.max() + bin_width, bin_width)
+        # Plot histogram if only one dataframe
+        sns.histplot(actual_trades_per_reset, bins=bins, kde=False)
+    else:
+        predicted_trades_per_reset = predicted_df.loc[predicted_df['reset'], 'trade_count']
+        if bin_width != None:
+            bins = np.arange(max(0, min(actual_trades_per_reset.min(), predicted_trades_per_reset.min())-bin_width)
+                             , max(actual_trades_per_reset.max(), predicted_trades_per_reset.max()) + bin_width, bin_width)
+        df = pd.DataFrame({'value': actual_trades_per_reset.to_list() + predicted_trades_per_reset.to_list(),
+                            'type': ['Actual'] * len(actual_trades_per_reset) + ['Predicted'] * len(predicted_trades_per_reset)})
+        # Plot histogram for two dataframes
+        sns.histplot(data=df, x='value', hue='type', bins=bins, kde=False, element='step', stat='count', common_bins=True)
+   
+    # Labels and legend
+    plt.title(f"Trades between resets")
+    plt.xlabel(f"Trades between resets")
+    plt.ylabel("Count")
+    plt.grid(True)
+    plt.show()
 
 def plot_price_variation(df
                          , x_unit = 'min'
@@ -95,7 +133,7 @@ def plot_error_distribution(actual_df
         title (str): title of the plot.
         fig_size (tuple): size of the matplotlib figure."""
     
-    errors = predicted_df[predicted_col] - actual_df[actual_col]
+    errors = predicted_df[predicted_col].values - actual_df[actual_col].values
     plt.figure(figsize=fig_size)
     sns.histplot(errors, bins=20, kde=True, color='steelblue')
     plt.title(title)
@@ -121,7 +159,7 @@ def plot_predictions_vs_actual(actual_df
         fig_size (tuple): size of the matplotlib figure."""
     
     plt.figure(figsize=fig_size)
-    sns.scatterplot(x=actual_df[actual_col], y=predicted_df[predicted_col])
+    sns.scatterplot(x=actual_df[actual_col].values, y=predicted_df[predicted_col].values)
     plt.plot([actual_df[actual_col].min(), actual_df[actual_col].max()],
              [actual_df[actual_col].min(), actual_df[actual_col].max()], 'r--')
     plt.title(title)

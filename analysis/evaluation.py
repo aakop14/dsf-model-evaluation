@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
+from scipy.stats import ttest_ind, mannwhitneyu
 
 
 def calculate_prediction_error(actual_df
@@ -31,24 +32,60 @@ def calculate_prediction_error(actual_df
 
 
 def describe_distribution(series
+                          , confidence=0.95
                           , skip_first_in_min = False):
     """Generate distribution statistics for a pandas series."""
     """Parameters:
         series (pd.Series): numerical data.
+        confidence (float): confidence level for Confidence Interval. Default: 0.95.
         skip_first_in_min (bool): skip the first entry when computing minimum."""
     """Returns: (dict): summary statistics including skewness and kurtosis."""
     
+    n = len(series)
+    mean = series.mean()
+    sem = stats.sem(series)
+    ci_low, ci_high = stats.t.interval(confidence, n - 1, loc=mean, scale=sem)
+    
     return {
-        'mean': series.mean(),
+        'mean': mean,
         'median': series.median(),
         'std': series.std(),
         'min': series[1:].min() if skip_first_in_min else series.min(),
         'max': series.max(),
         'iqr': series.quantile(0.75) - series.quantile(0.25),
-        'skew': stats.skew(series.dropna()),
-        'kurtosis': stats.kurtosis(series.dropna())
+        'skew': stats.skew(series),
+        'kurtosis': stats.kurtosis(series),
+        f'{int(confidence*100)}% CI lower': ci_low,
+        f'{int(confidence*100)}% CI upper': ci_high
     }
 
+
+def compare_distributions(actual_df
+                          , predicted_df
+                          , confidence=0.95
+                          , directions = ['Up', 'Down']):
+    """Compare statistical characteristics between actual and predicted values."""
+    """Parameters:
+        actual (pd.DataFrame): actual data with 'reset', 'trade_count', and 'direction' columns.
+        predicted (pd.DataFrame): predicted data with 'reset', 'trade_count', and 'direction' columns.
+        confidence (float): confidence level for CI. Default 0.95."""
+    """Returns: (pd.DataFrame): comparison table of metrics."""
+    actual = actual_df.loc[actual_df['reset'], 'trade_count']
+    predicted = predicted_df.loc[predicted_df['reset'], 'trade_count']
+    
+    actual_stats = describe_distribution(actual, confidence)
+    predicted_stats = describe_distribution(predicted, confidence)
+
+    stats_df = pd.DataFrame([actual_stats, predicted_stats])
+    stats_df['Number of trades'] = [len(actual_df), len(predicted_df)]
+    stats_df['Number of resets'] = [len(actual), len(predicted)]
+    stats_df['% resets'] = 100*stats_df['Number of resets']/stats_df['Number of trades']
+    for direction in directions:
+        stats_df['Count {}'.format(direction)] = [len(actual_df[actual_df['direction'] == direction])
+                                                        , len(predicted_df[predicted_df['direction'] == direction])]
+    stats_df = stats_df.T
+    stats_df.columns = ['Actual', 'Predicted']
+    return stats_df
 
 def print_stat(stat
                , title):
@@ -67,7 +104,7 @@ def print_stat(stat
     print(f"Skewness: {stat['skew']:.4f}")
     print(f"Kurtosis: {stat['kurtosis']:.4f}")
     
-    
+
 def display_df_info(df,
                    timestamp_col):
     """Print a quick overview of a dataframe with respect to its timestamp range and structure."""
@@ -77,3 +114,29 @@ def display_df_info(df,
     
     print("The dataframe contains total of {} entries from {} to {}".format(len(df), df[timestamp_col].min(), df[timestamp_col].max()))
     display(df.head())
+
+    
+def perform_hypothesis_tests(actual
+                             , predicted
+                             , alpha=0.05):
+    """Perform t-test and Mann–Whitney U test between actual and predicted values."""
+    """Parameters:
+        actual (pd.Series): actual numerical data.
+        predicted (pd.Series): predicted numerical data.
+        alpha (float): significance level. Default 0.05."""
+    """Returns: (dict): p-values and interpretation for both tests."""
+    actual = pd.Series(actual).dropna()
+    predicted = pd.Series(predicted).dropna()
+
+    # Welch’s t-test (does not assume equal variance)
+    t_stat, t_p = ttest_ind(actual, predicted, equal_var=False)
+
+    # Mann–Whitney U test (non-parametric)
+    u_stat, u_p = mannwhitneyu(actual, predicted, alternative='two-sided')
+
+    return {
+        't-test p-value': t_p,
+        't-test significant': t_p < alpha,
+        'Mann–Whitney U p-value': u_p,
+        'Mann–Whitney U significant': u_p < alpha
+    }
