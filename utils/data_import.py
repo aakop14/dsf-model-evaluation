@@ -143,6 +143,84 @@ def read_trading_data(column_names
         trading_df['tx_group'] = pd.factorize(trading_df['timestamp_floored'])[0] + 1
     return trading_df
 
+def add_reset_to_strat_df(df):
+    """ Adds reset detection logic to a trading strategy dataframe.
+    Tracks when vault balances for both tokens become positive (at least the starting balance in each),
+    and annotates each row with vault state, reset flags, and recent/last reset indices."""
+    """Parameters:
+        df (pd.DataFrame): dataframe with strategy trade data. Must include:
+            - 'token_in', 'token_out'
+            - 'token_amount_in', 'token_amount_out'
+            - 'token_in_usd', 'token_out_usd'"""
+    """Returns: (pd.DataFrame): modified df with added reset representative columns."""
+    
+    # Initialize new columns for reset tracking and vault balances
+    df['last_reset'] = -1
+    df['last_reset_mod'] = -1
+    df['recent_reset'] = -1
+    df['recent_reset_mod'] = -1
+    df['reset'] = False
+    df['reset_mod'] = False
+    df['vault_a'] = 0
+    df['vault_b'] = 0
+    df['vault_a_usd'] = 0
+    df['vault_b_usd'] = 0
+
+    # Initialize running vault balances for token A and B
+    vault_a = 0
+    vault_a_usd = 0
+    vault_b = 0
+    vault_b_usd = 0
+    
+    # Identify token A and B using the first row
+    token_a = df.loc[0, 'token_in']
+    token_b = df.loc[0, 'token_out']
+
+    for index in range(len(df)):
+        # Sanity check: tokens shouldn't be the same
+        if df.loc[index, 'token_in'] == df.loc[index, 'token_out']:
+            raise ValueError("Token IN and OUT are the same")
+            return
+        
+        # Update vaults based on direction of the trade
+        if token_a == df.loc[index, 'token_in']:
+            vault_a = vault_a + df.loc[index, 'token_amount_in']
+            vault_b = vault_b - df.loc[index, 'token_amount_out']
+            
+            vault_a_usd = vault_a_usd + df.loc[index, 'token_in_usd']
+            vault_b_usd = vault_b_usd - df.loc[index, 'token_out_usd']
+        if token_b == df.loc[index, 'token_in']:
+            vault_a = vault_a - df.loc[index, 'token_amount_out']
+            vault_b = vault_b + df.loc[index, 'token_amount_in']
+            
+            vault_a_usd = vault_a_usd - df.loc[index, 'token_out_usd']
+            vault_b_usd = vault_b_usd + df.loc[index, 'token_in_usd']
+        
+        # Store running vault balances in the DataFrame
+        df.loc[index, 'vault_a'] = vault_a
+        df.loc[index, 'vault_b'] = vault_b  
+        df.loc[index, 'vault_a_usd'] = vault_a_usd
+        df.loc[index, 'vault_b_usd'] = vault_b_usd
+        # Define a reset when both vaults are positive
+        df.loc[index, 'reset'] = vault_a > 0 and vault_b > 0
+        # If a reset occurred at this index
+        if df.loc[index, 'reset']:
+            # Record the reset index
+            df.loc[index, 'recent_reset'] = index
+            df.loc[index, 'last_reset'] = df.loc[:index-1, 'recent_reset'].max()
+            
+            # Define a "modified" reset only if the previous row did not qualify
+            # Avoids setting reset to a row if vault balances never reduced below starting
+            if index > 0:
+                if df.loc[index-1, 'vault_a'] > 0 and df.loc[index-1, 'vault_b'] > 0:
+                    df.loc[index,'reset_mod'] = False
+                else:
+                    df.loc[index,'reset_mod'] = True
+                    df.loc[index, 'recent_reset_mod'] = index
+                    df.loc[index, 'last_reset_mod'] = df.loc[:index-1, 'recent_reset_mod'].max()
+        
+    return df
+
 def read_raindex_data(csv_path=None
             , grouping_interval = None):
     """Open raindex trading data csv file and read into pandas dataframe. 
@@ -155,10 +233,10 @@ def read_raindex_data(csv_path=None
     
     # Column names to be assigned to the dataframe. 
     #---!!!IF COLUMNS CHANGED IN THE CSV FILE THIS NEEDS TO BE ALSO CHANGED ACCORDINGLY!!!--- 
-    raindex_columns =  ['timestamp_int', 'order_hash', 'order_type', 'token_a', 'token_b', 'token_amount_a', 'token_amount_b', 
-               'token_a_usd', 'token_b_usd', 'io_ratio', 'sender', 'tx_hash' ]
+    raindex_columns =  ['timestamp_int', 'order_hash', 'order_type', 'token_in', 'token_out', 'token_amount_in', 'token_amount_out', 
+               'token_in_usd', 'token_out_usd', 'io_ratio', 'sender', 'tx_hash' ]
     
-    raindex_df = read_trading_data(raindex_columns, True, csv_path, ['token_amount_a', 'token_amount_b']
+    raindex_df = read_trading_data(raindex_columns, True, csv_path, ['token_amount_in', 'token_amount_out']
                                    , ('' if grouping_interval is None else grouping_interval))
     if raindex_df is None:
         print('Raindex csv was not chosen.')
@@ -169,6 +247,8 @@ def read_raindex_data(csv_path=None
         raindex_df['timestamp_floored'] = raindex_df['timestamp_date']
         # Factorize to assign group numbers starting from 1
         raindex_df['tx_group'] = pd.factorize(raindex_df['timestamp_floored'])[0] + 1
+        
+    raindex_df = add_reset_to_strat_df(raindex_df)
     
     return raindex_df
 

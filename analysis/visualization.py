@@ -4,6 +4,7 @@ import utils
 from scipy.stats import expon, gamma
 import numpy as np
 import pandas as pd
+import math
 
 def plot_trade_time_hist(df
                          , time_unit = 'min'
@@ -41,13 +42,69 @@ def plot_trade_time_hist(df
     plt.legend()
     plt.grid(True)
     plt.show()
+
+def plot_trade_time_hist_grid(dfs,
+                               labels=None,
+                               time_unit='min',
+                               bins=30,
+                               kde=True,
+                               time_threshold_sigmas = 1,
+                               fit_exp=False,
+                               fig_size=(12, 12)):
+    """Plot histograms of time between trades for a list of DataFrames in a grid layout."""
+    """Parameters:
+        dfs (list): list of pd.DataFrames, each with a 'timestamp_diff' column in seconds.
+        labels (list): list of labels for each subplot (same length as dfs).
+        time_unit (str): unit of time to convert 'timestamp_diff' (e.g. 'min').
+        bins (int): number of bins for each histogram.
+        kde (bool): whether to include KDE curve.
+        fit_exp (bool): whether to overlay a fitted exponential curve.
+        fig_size (tuple): overall figure size."""
     
+    n = len(dfs)
+    cols = math.ceil(math.sqrt(n))
+    rows = math.ceil(n / cols)
+    
+    fig, axes = plt.subplots(rows, cols, figsize=fig_size, constrained_layout=True)
+    axes = axes.flatten()
+
+    for i, df in enumerate(dfs):
+        df = df[1:]
+        ax = axes[i]
+        TIME_COL = 'timestamp_diff'
+        time_diff = utils.convert_time(df[TIME_COL], time_unit)
+        time_diff_plot = time_diff[time_diff < (time_diff.mean() + time_diff.std()*time_threshold_sigmas)]
+
+        # Plot histogram
+        sns.histplot(time_diff_plot, bins=bins, kde=kde, stat=('density' if fit_exp else 'count'), color='skyblue', ax=ax, label='Empirical')
+
+        if fit_exp:
+            exp_params = expon.fit(time_diff)
+            x_vals = np.linspace(time_diff.min(), time_diff.max(), 1000)
+            exp_y = expon.pdf(x_vals, *exp_params)
+            ax.plot(x_vals, exp_y, 'r-', lw=2, label='Exponential fit')
+
+        title = labels[i] if labels and i < len(labels) else f"Strategy {i+1}"
+        ax.set_title(f"{title} ({time_unit})")
+        ax.set_xlabel(f"Time between trades ({time_unit})")
+        ax.set_ylabel(('Density' if fit_exp else 'Count'))
+        ax.set_xlim([0, time_diff_plot.max()])
+        ax.legend()
+        ax.grid(True)
+
+    # Hide any unused subplots
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.show()
     
 def plot_reset_trades_hist(actual_df
                          , predicted_df = None
                          , bins = 30
                          , bin_width = None
-                         , fig_size=(10, 5)):
+                         , fig_size=(10, 5)
+                         , title = None
+                         , is_mod_reset = False):
     """Plot histogram of trades between resets"""
     """Parameters:
         df (pd.DataFrame): dataframe with columns 'reset' and 'trade_count'.
@@ -55,7 +112,12 @@ def plot_reset_trades_hist(actual_df
         bin_width (int): width of bins for the histogram. If specified the bins count is overwritten. 
         fig_size (tuple): size of the plot."""
     
-    actual_trades_per_reset = actual_df.loc[actual_df['reset'], 'trade_count']
+    actual_trades_per_reset = None
+    if is_mod_reset:
+        actual_trades_per_reset = actual_df.loc[actual_df['reset_mod'], 'trade_count_mod']
+    else:
+        actual_trades_per_reset = actual_df.loc[actual_df['reset'], 'trade_count']
+    
     plt.figure(figsize=fig_size)
     
     if predicted_df is None:
@@ -74,7 +136,7 @@ def plot_reset_trades_hist(actual_df
         sns.histplot(data=df, x='value', hue='type', bins=bins, kde=False, element='step', stat='count', common_bins=True)
    
     # Labels and legend
-    plt.title(f"Trades between resets")
+    plt.title(title if title is not None else f"Trades between resets")
     plt.xlabel(f"Trades between resets")
     plt.ylabel("Count")
     plt.grid(True)

@@ -1,4 +1,7 @@
 import os
+import pandas as pd
+import shutil
+from openpyxl import load_workbook
 
 def convert_time(seconds
                  , time_unit):
@@ -66,7 +69,7 @@ def filter_by_timestamp_range(primary_df, secondary_df, timestamp_col_pr='date_t
     # Filter secondary_df within time window
     filtered_df = secondary_df[(secondary_df[timestamp_col_sec] >= min_time) & (secondary_df[timestamp_col_sec] <= max_time)].copy()
     
-    return filtered_df
+    return filtered_df.reset_index(drop=True)
 
 def get_data_path(file_name
                   , data_type):
@@ -85,3 +88,69 @@ def get_data_path(file_name
         return os.path.join(data_folder_path, 'trading_data', file_name)
     # Return None if the data_type is not recognized
     return None
+
+
+def get_closest_sheet_name(minutes):
+    """Given a number of minutes, return the closest matching sheet name
+    from the set ['15M', '30M', '60M', '90M']."""
+    """Parameters:
+        minutes (int or float): Desired time interval in minutes."""
+    """Returns:(str): Closest matching sheet name (e.g., '15M')."""
+    
+    # If new options are added to the model spreadsheet, update this list
+    sheet_options = [15, 30, 60, 90]
+    # Find the closest time interval
+    closest = min(sheet_options, key=lambda x: abs(x - minutes))
+    return f"{closest}M"
+
+def remove_extension(file_name):
+    """Removes the extension part from the filename."""
+    """Parameters:
+        file_name (str): file name that needs extension removed"""
+    """Returns:(str): cleaned file name if extension is defined or unedited file name"""
+    
+    extensions = ['.csv', '.xlsx']
+    for ext in extensions:
+        if file_name[len(file_name)-len(ext):] == '.csv':
+            return file_name[:len(file_name)-len(ext)]
+    
+    return file_name
+
+def fill_template_with_data(df
+                            , file_name
+                            , template_name='template_dsf_model.xlsx'):
+    """
+    Create a copy of a template Excel file and fill the 'Data' sheet starting from row 2 
+    with selected columns from the input DataFrame.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame containing columns:
+            ['block_number', 'tx_hash', 'token_amount_a', 'token_amount_b', 'timestamp']
+        filename (str): Name of the new Excel file to create.
+        template_path (str): Path to the template Excel file (default: 'template_dsf_model.xlsx').
+
+    Returns:
+        None
+    """
+    # Ensure required columns are present
+    required_cols = ['block_number', 'tx_hash', 'token_amount_a', 'token_amount_b', 'timestamp_int']
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"DataFrame is missing required columns: {missing}")
+    
+    template_path = get_data_path(template_name, 'model')
+    file_path = get_data_path(file_name, 'model')
+    # Copy the template to new file
+    shutil.copy(template_path, file_path)
+
+    # Load workbook and sheet
+    wb = load_workbook(file_path)
+    ws = wb['Data']
+    cols_to_write = [1,3,4,5,6]
+    # Write rows starting from row 2 (index 0-based = row 1)
+    for i in range(len(df)):
+        for j in range(len(required_cols)):
+            ws.cell(row=i+2, column=cols_to_write[j], value=df.loc[i, required_cols[j]])
+
+    # Save the modified file
+    wb.save(file_path)

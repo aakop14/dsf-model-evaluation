@@ -50,6 +50,8 @@ def describe_distribution(series
         'mean': mean,
         'median': series.median(),
         'std': series.std(),
+        'cv': series.std()/series.mean(),
+        'mad': np.median(np.abs(series - series.median())),
         'min': series[1:].min() if skip_first_in_min else series.min(),
         'max': series.max(),
         'iqr': series.quantile(0.75) - series.quantile(0.25),
@@ -63,14 +65,20 @@ def describe_distribution(series
 def compare_distributions(actual_df
                           , predicted_df
                           , confidence=0.95
-                          , directions = ['Up', 'Down']):
+                          , directions = ['Up', 'Down']
+                          , is_mod_reset = False):
     """Compare statistical characteristics between actual and predicted values."""
     """Parameters:
         actual (pd.DataFrame): actual data with 'reset', 'trade_count', and 'direction' columns.
         predicted (pd.DataFrame): predicted data with 'reset', 'trade_count', and 'direction' columns.
         confidence (float): confidence level for CI. Default 0.95."""
     """Returns: (pd.DataFrame): comparison table of metrics."""
-    actual = actual_df.loc[actual_df['reset'], 'trade_count']
+    actual = None
+    if is_mod_reset:
+        actual = actual_df.loc[actual_df['reset_mod'], 'trade_count_mod']
+    else:
+        actual = actual_df.loc[actual_df['reset'], 'trade_count']
+        
     predicted = predicted_df.loc[predicted_df['reset'], 'trade_count']
     
     actual_stats = describe_distribution(actual, confidence)

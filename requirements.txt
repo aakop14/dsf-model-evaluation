@@ -10,3 +10,6 @@ seaborn>=0.12
 
 # Interactive exploration
 jupyterlab>=3.6
+
+# Excel files
+openpyxl>=3.0
