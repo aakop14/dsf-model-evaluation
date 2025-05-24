@@ -125,3 +125,14 @@ Predictions based on mean             |  Predictions based on median
 * Both predicted distributions are shifted toward lower values. In neither case the predicted trade count span covers the full actual range.
 
 ---
+
+## Trade Recommendations
+
+>$\text{Trade Size} = \frac{\text{Total Capital}}{\text{Predicted Trades per Reset}}$
+
+> The model underpredicts the number of trades in both (mean and median) cases. This may result in vaults depleting before reset and causing missed opportunities. Therefore, it would be safer to add a buffer to the number of predicted trades per reset. 
+
+> Simple way of choosing the buffer could be based on the relative error between actual and predicted trade count. 
+
+>$\text{Buffer} = \frac{\text{Mean Actual Trade Count}-\text{Mean Predicted Trade Count}}{\text{Mean Actual Trade Count}}$
+>$\text{Adjusted Trade Size} = \frac{\text{Total Capital}}{\text{Predicted Trades per Reset }\times\text{ (1 + Buffer)}}$
